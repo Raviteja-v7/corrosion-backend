@@ -320,7 +320,6 @@ if __name__ == '__main__':
     print("\n" + "="*50)
     print("Corrosion Prediction API Server")
     print("="*50)
-    print("Server starting on http://localhost:5000")
     print("API Endpoints:")
     print("  - POST /api/predict - Make corrosion predictions")
     print("  - GET  /api/health - Health check")
@@ -328,5 +327,4 @@ if __name__ == '__main__':
     print("  - POST /api/retrain - Retrain the model")
     print("="*50 + "\n")
     
-    if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

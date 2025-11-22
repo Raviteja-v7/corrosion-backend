@@ -22,9 +22,9 @@ scaler = None
 material_encoder = None
 env_encoder = None
 
-# -----------------------------
-# Training Data Generator
-# -----------------------------
+# ---------------------------------------------------------------------
+# SYNTHETIC TRAINING DATA GENERATOR
+# ---------------------------------------------------------------------
 def generate_training_data(n_samples=2000):
     np.random.seed(42)
 
@@ -78,13 +78,14 @@ def generate_training_data(n_samples=2000):
 
     return pd.DataFrame(data)
 
-# -----------------------------
-# Model Training
-# -----------------------------
+
+# ---------------------------------------------------------------------
+# MODEL TRAINING
+# ---------------------------------------------------------------------
 def train_model():
     global model, scaler, material_encoder, env_encoder
 
-    print("Generating training data...")
+    print("🔧 Training model...")
     df = generate_training_data()
 
     material_encoder = LabelEncoder()
@@ -108,55 +109,56 @@ def train_model():
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    print("Training Random Forest...")
-    model = RandomForestRegressor(n_estimators=100, max_depth=15, random_state=42)
+    model = RandomForestRegressor(n_estimators=120, max_depth=18, random_state=42)
     model.fit(X_train_scaled, y_train)
 
     y_pred = model.predict(X_test_scaled)
-    print("Model trained. R²:", r2_score(y_test, y_pred))
+    print("R² Score:", r2_score(y_test, y_pred))
 
+    # Save model files
     joblib.dump(model, "corrosion_model.pkl")
     joblib.dump(scaler, "scaler.pkl")
     joblib.dump(material_encoder, "material_encoder.pkl")
     joblib.dump(env_encoder, "env_encoder.pkl")
 
-    print("Saved model files.")
+    print("📁 Model saved.")
 
-# -----------------------------
-# Model Loader
-# -----------------------------
+
+# ---------------------------------------------------------------------
+# MODEL LOADER (Runs on Render automatically)
+# ---------------------------------------------------------------------
 def load_model():
     global model, scaler, material_encoder, env_encoder
 
     if os.path.exists("corrosion_model.pkl"):
-        print("Loading model files...")
+        print("📦 Loading saved model...")
         model = joblib.load("corrosion_model.pkl")
         scaler = joblib.load("scaler.pkl")
         material_encoder = joblib.load("material_encoder.pkl")
         env_encoder = joblib.load("env_encoder.pkl")
-        print("Model loaded.")
+        print("✅ Model loaded.")
     else:
-        print("No model found → Training new model...")
+        print("⚠ No model found — training a new one...")
         train_model()
 
-# ---------------------------------------------------
-# IMPORTANT: Load the model at import (Gunicorn needs this)
-# ---------------------------------------------------
+
+# IMPORTANT: Load model immediately (works for Gunicorn on Render)
 load_model()
 
-# -----------------------------
+
+# ---------------------------------------------------------------------
 # API ROUTES
-# -----------------------------
+# ---------------------------------------------------------------------
 @app.route("/api/health")
 def health():
     return jsonify({"status": "healthy", "model_loaded": model is not None})
 
+
 @app.route("/api/predict", methods=["POST"])
 def predict():
     try:
-        global model, scaler, material_encoder, env_encoder
-
         data = request.get_json()
+
         temperature = float(data["temperature"])
         humidity = float(data["humidity"])
         pH = float(data["pH"])
@@ -169,16 +171,16 @@ def predict():
         material_encoded = material_encoder.transform([material])[0]
         env_encoded = env_encoder.transform([environment])[0]
 
-        features = scaler.transform([[
+        features_scaled = scaler.transform([[
             temperature, humidity, pH, chloride,
             exposure_time, coating,
             material_encoded, env_encoded
         ]])
 
-        corrosion_rate = model.predict(features)[0]
+        corrosion_rate = model.predict(features_scaled)[0]
         total_corrosion = corrosion_rate * exposure_time / 12
 
-        # Risk assessment
+        # Risk logic
         if total_corrosion > 2:
             risk_level = "High"
             risk_color = "text-red-600"
@@ -196,6 +198,19 @@ def predict():
             "threshold": 2.0
         } for m in range(int(exposure_time) + 1)]
 
+        # ---------------------------------------------------
+        # CONTRIBUTING FACTORS RESTORED 🔥
+        # ---------------------------------------------------
+        contributing_factors = [
+            {"name": "Temperature", "impact": abs(temperature - 25) * 2, "value": f"{temperature}°C"},
+            {"name": "Humidity", "impact": abs(humidity - 50) * 1.5, "value": f"{humidity}%"},
+            {"name": "pH Level", "impact": abs(pH - 7) * 10, "value": f"{pH}"},
+            {"name": "Chloride", "impact": chloride * 15, "value": f"{chloride} mg/L"},
+            {"name": "Coating", "impact": (100 - coating) * 0.5, "value": f"{coating} μm"},
+        ]
+
+        contributing_factors.sort(key=lambda x: x["impact"], reverse=True)
+
         return jsonify({
             "success": True,
             "prediction": {
@@ -205,7 +220,7 @@ def predict():
                 "riskColor": risk_color,
                 "timeToThreshold": round((2.0 / corrosion_rate) * 12, 1),
                 "forecastData": forecast,
-                "contributingFactors": [],
+                "contributingFactors": contributing_factors,
                 "confidence": 0.85
             }
         })
@@ -213,8 +228,9 @@ def predict():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 400
 
-# -----------------------------
-# Local Dev Server (ignored on Render)
-# -----------------------------
+
+# ---------------------------------------------------------------------
+# LOCAL DEV SERVER (ignored on Render)
+# ---------------------------------------------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)

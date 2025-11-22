@@ -1,0 +1,14 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# ML Model Files
+*.pkl
+
+# OS Files
+.DS_Store
+
+# Node (if frontend inside same repo)
+node_modules/
+dist/
